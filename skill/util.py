@@ -62,7 +62,7 @@ def play(url, offset, text, card_data, response_builder):
             audio_item=AudioItem(
                 stream=Stream(
                     token=url,
-                    url=url,
+                    url="https://samarthalexasongbucket.s3.eu-west-2.amazonaws.com/%s"  % (url),
                     offset_in_milliseconds=offset,
                     expected_previous_token=None),
                 metadata=add_screen_background(card_data) if card_data else None
@@ -175,3 +175,11 @@ def should_play_jingle(handler_input):
         handler_input.attributes_manager.save_persistent_attributes()
 
     return will_play_jingle
+
+
+
+
+def get_playback_info(handler_input):
+    # type: (HandlerInput) -> Dict
+    persistence_attr = handler_input.attributes_manager.persistent_attributes
+    return persistence_attr.get('playback_info')

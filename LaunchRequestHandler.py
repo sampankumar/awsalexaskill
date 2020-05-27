@@ -14,13 +14,12 @@ from ask_sdk_core.handler_input import HandlerInput
 
 from skill import (data, util)
 
-from boto3  import client
+import boto3
+from boto3 import client
 
 bucket_name = "samarthalexasongbucket"
-prefix = "alexa"
+prefix = "alexa/"
 
-s3_conn   = client('s3')  # type: BaseClient  ## again assumes boto.cfg setup, assume AWS S3
-s3_result =  s3_conn.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
 
 sb = SkillBuilder()
 logger = logging.getLogger(__name__)
@@ -86,20 +85,38 @@ class LaunchRequestHandler1(AbstractRequestHandler):
     #     return handler_input.response_builder.response
 
     def handle(self, handler_input):
+        s3 = boto3.resource('s3')
+        my_bucket = s3.Bucket(bucket_name)
 
-        for key in s3_result['Contents']:
-            handler_input.response_builder.add_directive(
-                PlayDirective(
-                    play_behavior=PlayBehavior.REPLACE_ALL,
-                    audio_item=AudioItem(
-                        stream=Stream(
-                            token=key,
-                            url="https://samarthalexasongbucket.s3.eu-west-2.amazonaws.com/alexa/%" % (key),
-                            expected_previous_token=None)
-                    )
-                )
-            )
+        #s3_conn  = client('s3')  # type: BaseClient  ## again assumes boto.cfg setup, assume AWS S3
+        #s3_result =  s3_conn.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+
+        s3_result =  my_bucket.objects.filter(Prefix=prefix)
+        print("s3_result %s" % (s3_result))
+        for object_summary in s3_result:
+            if "dhobi.mp3" in object_summary.key:
+                util.play(object_summary.key, "0", None , None, handler_input.response_builder)
         return handler_input.response_builder.response
+
+
+class PlaybackNearlyFinishedHandler(AbstractRequestHandler):
+    """AudioPlayer.PlaybackNearlyFinished Directive received.
+
+    Replacing queue with the URL again. This should not happen on live streams.
+    """
+    def can_handle(self, handler_input):
+        # type: (HandlerInput) -> bool
+        return is_request_type("AudioPlayer.PlaybackNearlyFinished")(handler_input)
+
+    def handle(self, handler_input):
+        # type: (HandlerInput) -> Response
+        logger.info("In PlaybackNearlyFinishedHandler")
+        logger.info("Playback nearly finished")
+        request = handler_input.request_envelope.request
+        return util.play_later(
+            url=util.audio_data(request)["url"],
+            card_data=util.audio_data(request)["card"],
+            response_builder=handler_input.response_builder)
 
 
 class HelpIntentHandler(AbstractRequestHandler):
@@ -176,22 +193,14 @@ class CancelOrStopIntentHandler(AbstractRequestHandler):
 class PauseIntentHandler(AbstractRequestHandler):
     """Handler for cancel, stop or pause intents."""
     def can_handle(self, handler_input):
-        # type: (HandlerInput) -> bool
-        return (is_intent_name("AMAZON.PauseIntent")(handler_input))
+        return (handler_input.request_envelope.request.object_type == "IntentRequest"
+                and handler_input.request_envelope.request.intent.name == "AMAZON.PauseIntent")
 
     def handle(self, handler_input):
-        handler_input.response_builder.add_directive(
-            PlayDirective(
-                play_behavior=PlayBehavior.REPLACE_ALL,
-                audio_item=AudioItem(
-                    stream=Stream(
-                        token="https://samarthalexasongbucket.s3.eu-west-2.amazonaws.com/matargashti.mp3",
-                        url="https://samarthalexasongbucket.s3.eu-west-2.amazonaws.com/matargashti.mp3",
-                        expected_previous_token=None)
-                )
-            )
-        )
-        return handler_input.response_builder.response
+        # type: (HandlerInput) -> Response
+        logger.info("In PauseIntentHandler")
+        #stopAttribute = handler_input.attributes_manager.request_attributes["_"]
+        return util.stop("Goodbye.", handler_input.response_builder)
 
 
 
@@ -296,26 +305,6 @@ class PlaybackStoppedHandler(AbstractRequestHandler):
         logger.info("In PlaybackStoppedHandler")
         logger.info("Playback stopped")
         return handler_input.response_builder.response
-
-
-class PlaybackNearlyFinishedHandler(AbstractRequestHandler):
-    """AudioPlayer.PlaybackNearlyFinished Directive received.
-
-    Replacing queue with the URL again. This should not happen on live streams.
-    """
-    def can_handle(self, handler_input):
-        # type: (HandlerInput) -> bool
-        return is_request_type("AudioPlayer.PlaybackNearlyFinished")(handler_input)
-
-    def handle(self, handler_input):
-        # type: (HandlerInput) -> Response
-        logger.info("In PlaybackNearlyFinishedHandler")
-        logger.info("Playback nearly finished")
-        request = handler_input.request_envelope.request
-        return util.play_later(
-            url=util.audio_data(request)["url"],
-            card_data=util.audio_data(request)["card"],
-            response_builder=handler_input.response_builder)
 
 
 class PlaybackFailedHandler(AbstractRequestHandler):
@@ -443,9 +432,11 @@ class CatchAllExceptionHandler(AbstractExceptionHandler):
     def handle(self, handler_input, exception):
         # type: (HandlerInput, Exception) -> Response
         logger.info("In CatchAllExceptionHandler")
+        logger.info(handler_input.request_envelope)
+        logger.info(self)
         logger.error(exception, exc_info=True)
         #_ = handler_input.attributes_manager.request_attributes["_"]
-        handler_input.response_builder.speak("catch")
+        return util.stop("Goodbye.", handler_input.response_builder)
 
         return handler_input.response_builder.response
 
@@ -477,7 +468,7 @@ sb.add_request_handler(UnhandledIntentHandler())
 sb.add_request_handler(NextOrPreviousIntentHandler())
 sb.add_request_handler(NextOrPreviousCommandHandler())
 sb.add_request_handler(CancelOrStopIntentHandler())
-#sb.add_request_handler(PauseCommandHandler())
+sb.add_request_handler(PauseIntentHandler())
 sb.add_request_handler(ResumeIntentHandler())
 sb.add_request_handler(StartOverIntentHandler())
 sb.add_request_handler(PlaybackStartedHandler())
