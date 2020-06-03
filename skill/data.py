@@ -20,6 +20,8 @@ jingle = {
     "play_once_every": 1000*60*60*24  # 24 hours
 }
 
+AUDIO_DATA = []
+
 en = {
     "card": {
         "title": 'My Radio',

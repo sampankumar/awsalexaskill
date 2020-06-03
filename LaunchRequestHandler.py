@@ -7,6 +7,7 @@ from ask_sdk_core.dispatch_components import (
     AbstractRequestHandler, AbstractExceptionHandler,
     AbstractRequestInterceptor)
 
+
 from ask_sdk_model import Response
 from ask_sdk_model.interfaces.audioplayer import (
     PlayDirective, PlayBehavior, AudioItem, Stream)
@@ -15,7 +16,6 @@ from ask_sdk_core.handler_input import HandlerInput
 from skill import (data, util)
 
 import boto3
-from boto3 import client
 
 bucket_name = "samarthalexasongbucket"
 prefix = "alexa/"
@@ -25,6 +25,7 @@ sb = SkillBuilder()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+index = 1
 
 class CheckAudioInterfaceHandler(AbstractRequestHandler):
     """Check if device supports audio play.
@@ -85,17 +86,25 @@ class LaunchRequestHandler1(AbstractRequestHandler):
     #     return handler_input.response_builder.response
 
     def handle(self, handler_input):
+        global index
         s3 = boto3.resource('s3')
         my_bucket = s3.Bucket(bucket_name)
+
+        s3_result =  my_bucket.objects.filter(Prefix=prefix)
+        print("s3_result %s" % (s3_result))
+
+        for object_summary in s3_result:
+            logger.info(object_summary.key)
+            data.AUDIO_DATA.append(object_summary.key)
 
         #s3_conn  = client('s3')  # type: BaseClient  ## again assumes boto.cfg setup, assume AWS S3
         #s3_result =  s3_conn.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
 
-        s3_result =  my_bucket.objects.filter(Prefix=prefix)
-        print("s3_result %s" % (s3_result))
-        for object_summary in s3_result:
-            if "dhobi.mp3" in object_summary.key:
-                util.play(object_summary.key, "0", None , None, handler_input.response_builder)
+        util.play(data.AUDIO_DATA[index], "0", None , None, handler_input.response_builder)
+        index = index + 1
+        # for object_summary in s3_result:
+        #     if "dhobi.mp3" in object_summary.key:
+        #         util.play(object_summary.key, "0", None , None, handler_input.response_builder)
         return handler_input.response_builder.response
 
 
@@ -112,11 +121,21 @@ class PlaybackNearlyFinishedHandler(AbstractRequestHandler):
         # type: (HandlerInput) -> Response
         logger.info("In PlaybackNearlyFinishedHandler")
         logger.info("Playback nearly finished")
-        request = handler_input.request_envelope.request
-        return util.play_later(
-            url=util.audio_data(request)["url"],
-            card_data=util.audio_data(request)["card"],
-            response_builder=handler_input.response_builder)
+        logger.info(handler_input.request_envelope)
+        logger.info(self)
+        global index
+
+        #request = handler_input.request_envelope.request
+        if (len(data.AUDIO_DATA) > 0):
+            logger.info("in s3 object list")
+            util.play_later(data.AUDIO_DATA[index], 0, None, handler_input.response_builder)
+            index = index + 1
+        else:
+            logger.info("in else")
+            util.stop("Thanks for listening.", handler_input.response_builder)
+
+        logger.info(handler_input.response_builder.response)
+        return handler_input.response_builder.response
 
 
 class HelpIntentHandler(AbstractRequestHandler):
@@ -287,8 +306,7 @@ class PlaybackFinishedHandler(AbstractRequestHandler):
         # type: (HandlerInput) -> Response
         logger.info("In PlaybackFinishedHandler")
         logger.info("Playback finished")
-        return handler_input.response_builder.response
-
+        return util.stop(None, handler_input.response_builder)
 
 class PlaybackStoppedHandler(AbstractRequestHandler):
     """AudioPlayer.PlaybackStopped Directive received.

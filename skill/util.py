@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import datetime
+import logging
 from typing import Dict, Optional
 from ask_sdk_model import Request, Response
 from ask_sdk_model.ui import StandardCard, Image
@@ -11,6 +12,8 @@ from ask_sdk_model.interfaces import display
 from ask_sdk_core.response_helper import ResponseFactory
 from ask_sdk_core.handler_input import HandlerInput
 from . import data
+
+logger = logging.getLogger(__name__)
 
 def audio_data(request):
     # type: (Request) -> Dict
@@ -30,7 +33,6 @@ def audio_data(request):
         return data.es
     else:
         return {}
-
 
 def play(url, offset, text, card_data, response_builder):
     """Function to play audio.
@@ -75,12 +77,14 @@ def play(url, offset, text, card_data, response_builder):
 
     return response_builder.response
 
-def play_later(url, card_data, response_builder):
+def play_later(url, offset, card_data, response_builder):
     """Play the stream later.
 
     https://developer.amazon.com/docs/custom-skills/audioplayer-interface-reference.html#play
     REPLACE_ENQUEUED: Replace all streams in the queue. This does not impact the currently playing stream.
     """
+    logger.info("play_later")
+
     # type: (str, Dict, ResponseFactory) -> Response
     if card_data:
         # Using URL as token as they are all unique
@@ -96,7 +100,23 @@ def play_later(url, card_data, response_builder):
                     metadata=add_screen_background(card_data)))
         ).set_should_end_session(True)
 
-        return response_builder.response
+    logger.info("going to add directive")
+
+    response_builder.add_directive(
+        PlayDirective(
+            play_behavior=PlayBehavior.REPLACE_ENQUEUED,
+            audio_item=AudioItem(
+                stream=Stream(
+                    token=url,
+                    url="https://samarthalexasongbucket.s3.eu-west-2.amazonaws.com/%s"  % (url),
+                    offset_in_milliseconds=offset,
+                    expected_previous_token=None),
+                metadata=add_screen_background(card_data) if card_data else None
+            )
+        )
+    ).set_should_end_session(True)
+
+    return response_builder.response
 
 def stop(text, response_builder):
     """Issue stop directive to stop the audio.
@@ -175,11 +195,3 @@ def should_play_jingle(handler_input):
         handler_input.attributes_manager.save_persistent_attributes()
 
     return will_play_jingle
-
-
-
-
-def get_playback_info(handler_input):
-    # type: (HandlerInput) -> Dict
-    persistence_attr = handler_input.attributes_manager.persistent_attributes
-    return persistence_attr.get('playback_info')
